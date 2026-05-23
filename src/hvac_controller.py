@@ -46,37 +46,53 @@ class BaseController:
 
 @dataclass
 class ReactiveController(BaseController):
+    mode_changeover: float = 22.0
     name: str = "reactive"
 
     def choose_action(self, occupancy: int, outdoor_temperature: float, predicted_count: float = 0.0) -> int:
         if not occupancy:
             return 0
+        if outdoor_temperature > self.mode_changeover:
+            if self.indoor_temperature > self.comfort_max:
+                return -1
+            return 0
         if self.indoor_temperature < self.comfort_min:
             return 1
-        if self.indoor_temperature > self.comfort_max:
-            return -1
         return 0
 
 
 @dataclass
 class PredictiveController(BaseController):
     precondition_target: float = 23.0
-    precondition_count_threshold: float = 1.0
+    precondition_count_threshold: float = 2.0
+    precondition_deadband: float = 0.5
+    mode_changeover: float = 22.0
     name: str = "predictive"
 
     def choose_action(self, occupancy: int, outdoor_temperature: float, predicted_count: float = 0.0) -> int:
         if occupancy:
-            if self.indoor_temperature < self.comfort_min:
-                return 1
+            return self._comfort_action(outdoor_temperature)
+
+        if predicted_count > self.precondition_count_threshold:
+            return self._precondition_action(outdoor_temperature)
+        return 0
+
+    def _comfort_action(self, outdoor_temperature: float) -> int:
+        if outdoor_temperature > self.mode_changeover:
             if self.indoor_temperature > self.comfort_max:
                 return -1
             return 0
+        if self.indoor_temperature < self.comfort_min:
+            return 1
+        return 0
 
-        if predicted_count > self.precondition_count_threshold:
-            if self.indoor_temperature > self.precondition_target:
+    def _precondition_action(self, outdoor_temperature: float) -> int:
+        if outdoor_temperature > self.mode_changeover:
+            if self.indoor_temperature > self.precondition_target + self.precondition_deadband:
                 return -1
-            if self.indoor_temperature < self.precondition_target:
-                return 1
+            return 0
+        if self.indoor_temperature < self.precondition_target - self.precondition_deadband:
+            return 1
         return 0
 
 
