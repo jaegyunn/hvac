@@ -33,6 +33,10 @@ class BaseController:
             return 1
         return 0
 
+    def _predicted_threshold(self) -> float:
+        """Threshold used to derive binary predicted_occupancy for logging."""
+        return getattr(self, "precondition_count_threshold", 1.0)
+
     def step(self, row: pd.Series, predicted_count: float = 0.0) -> dict:
         indoor_before = float(self.indoor_temperature)
         outdoor = float(row["outdoor_temperature"])
@@ -47,7 +51,7 @@ class BaseController:
             "occupancy": occupancy,
             "occupancy_count": occupancy_count,
             "predicted_count": float(predicted_count),
-            "predicted_occupancy": int(float(predicted_count) > 3),
+            "predicted_occupancy": int(float(predicted_count) > self._predicted_threshold()),
             "outdoor_temperature": outdoor,
             "indoor_before": indoor_before,
             "action": action,
