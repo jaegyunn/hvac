@@ -5,6 +5,7 @@ CONFIG = {
     "freq_minutes": 5,  # 5-min resolution matches ROBOD; 24 steps = 2 hours horizon
     "comfort_min_c": 20.0,
     "comfort_max_c": 24.0,
+    "mode_changeover_c": 22.0,  # outdoor temp threshold for cooling vs heating mode
     "outdoor_min_c": 24.0,
     "outdoor_max_c": 34.0,
     "predictor_horizon_minutes": 120,

@@ -13,6 +13,7 @@ from .config import CONFIG
 class BaseController:
     comfort_min: float = CONFIG["comfort_min_c"]
     comfort_max: float = CONFIG["comfort_max_c"]
+    mode_changeover: float = CONFIG["mode_changeover_c"]
     thermal_a: float = CONFIG["thermal_a"]
     thermal_b: float = CONFIG["thermal_b"]
     indoor_temperature: float = CONFIG["initial_indoor_temp_c"]
@@ -46,7 +47,6 @@ class BaseController:
 
 @dataclass
 class ReactiveController(BaseController):
-    mode_changeover: float = 22.0
     name: str = "reactive"
 
     def choose_action(self, occupancy: int, outdoor_temperature: float, predicted_count: float = 0.0) -> int:
@@ -66,7 +66,6 @@ class PredictiveController(BaseController):
     precondition_target: float = 23.0
     precondition_count_threshold: float = 2.0
     precondition_deadband: float = 0.5
-    mode_changeover: float = 22.0
     name: str = "predictive"
 
     def choose_action(self, occupancy: int, outdoor_temperature: float, predicted_count: float = 0.0) -> int:
