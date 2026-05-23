@@ -82,46 +82,63 @@ def load_synthetic(days: int, freq_minutes: int) -> pd.DataFrame:
 
 
 def load_robod(
-    room: int = 2,
+    rooms: list[int] | int = 2,
     start_hour: int = 6,
     end_hour: int = 22,
     exclude_break: bool = True,
+    **legacy_kwargs,
 ) -> pd.DataFrame:
-    """Load ROBOD building occupancy + outdoor temperature for a single room.
+    """Load one or more ROBOD rooms, concatenated with room_id column.
 
-    Source CSV: data/raw/ROBOD/SupplementaryData/combined_Room{room}.csv
+    Returns columns: timestamp, room_id, occupancy, occupancy_count,
+    outdoor_temperature, indoor_temperature_reference.
     """
-    path = DATA_DIR / "raw" / "ROBOD" / "SupplementaryData" / f"combined_Room{room}.csv"
-    if not path.exists():
-        raise FileNotFoundError(f"ROBOD room file not found: {path}")
+    if "room" in legacy_kwargs:
+        rooms = legacy_kwargs.pop("room")
+    if legacy_kwargs:
+        raise TypeError(f"Unexpected keyword arguments: {sorted(legacy_kwargs)}")
+    if isinstance(rooms, int):
+        rooms = [rooms]
 
-    df = pd.read_csv(path)
-    df["timestamp"] = pd.to_datetime(df["timestamp"], utc=True).dt.tz_convert("Asia/Singapore").dt.tz_localize(None)
-    df = df.sort_values("timestamp").reset_index(drop=True)
+    parts = []
+    for room in rooms:
+        path = DATA_DIR / "raw" / "ROBOD" / "SupplementaryData" / f"combined_Room{room}.csv"
+        if not path.exists():
+            raise FileNotFoundError(f"ROBOD room file not found: {path}")
 
-    hour = df["timestamp"].dt.hour
-    df = df[(hour >= start_hour) & (hour < end_hour)]
-    df = df[df["timestamp"].dt.date != pd.Timestamp("2021-11-04").date()]
-    if exclude_break:
-        break_start = pd.Timestamp("2021-12-05")
-        break_end = pd.Timestamp("2021-12-24")
-        df = df[~((df["timestamp"] >= break_start) & (df["timestamp"] < break_end))]
+        df = pd.read_csv(path)
+        df["timestamp"] = pd.to_datetime(df["timestamp"], utc=True).dt.tz_convert("Asia/Singapore").dt.tz_localize(None)
+        df = df.sort_values("timestamp").reset_index(drop=True)
 
-    out = pd.DataFrame(
-        {
-            "timestamp": df["timestamp"],
-            "occupancy_count": df["occupant_count [number]"].fillna(0).astype(int),
-            "outdoor_temperature": df["dry_bulb_temp [Celsius]"].astype(float),
-            "indoor_temperature_reference": df["air_temperature [Celsius]"].astype(float),
-        }
-    )
-    out["occupancy"] = (out["occupancy_count"] > 0).astype(int)
-    return out[
+        hour = df["timestamp"].dt.hour
+        df = df[(hour >= start_hour) & (hour < end_hour)]
+        df = df[df["timestamp"].dt.date != pd.Timestamp("2021-11-04").date()]
+        if exclude_break:
+            break_start = pd.Timestamp("2021-12-05")
+            break_end = pd.Timestamp("2021-12-24")
+            df = df[~((df["timestamp"] >= break_start) & (df["timestamp"] < break_end))]
+
+        part = pd.DataFrame(
+            {
+                "timestamp": df["timestamp"],
+                "room_id": room,
+                "occupancy_count": df["occupant_count [number]"].fillna(0).astype(int),
+                "outdoor_temperature": df["dry_bulb_temp [Celsius]"].astype(float),
+                "indoor_temperature_reference": df["air_temperature [Celsius]"].astype(float),
+            }
+        )
+        part["occupancy"] = (part["occupancy_count"] > 0).astype(int)
+        parts.append(part)
+
+    out = pd.concat(parts, ignore_index=True)
+    out = out[
         [
             "timestamp",
+            "room_id",
             "occupancy",
             "occupancy_count",
             "outdoor_temperature",
             "indoor_temperature_reference",
         ]
-    ].reset_index(drop=True)
+    ]
+    return out.reset_index(drop=True)
