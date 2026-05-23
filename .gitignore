@@ -1,0 +1,82 @@
+# --- Python ---
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+*.egg
+*.egg-info/
+.eggs/
+build/
+dist/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+.coverage.*
+htmlcov/
+.tox/
+.nox/
+
+# --- Virtual environments ---
+.venv/
+venv/
+env/
+ENV/
+
+# --- Environment / secrets ---
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+
+# --- Data ---
+data/raw/
+data/interim/
+data/processed/
+data/external/
+*.csv
+*.tsv
+*.parquet
+*.h5
+*.hdf5
+*.npz
+*.pkl
+*.pickle
+# keep small sample/fixture data if you want — uncomment to allow:
+# !data/samples/**
+
+# --- Results / artifacts ---
+results/
+outputs/
+runs/
+logs/
+*.log
+*.png
+*.jpg
+*.jpeg
+*.svg
+*.pdf
+checkpoints/
+*.ckpt
+*.pt
+*.pth
+*.onnx
+
+# --- Model checkpoints ---
+# Keep checkpoint outputs local by default; commit models/.gitkeep so the folder exists.
+# Small .pt files under 10 MB can still be committed intentionally with git add -f.
+models/*
+!models/.gitkeep
+
+# --- Notebooks ---
+.ipynb_checkpoints/
+
+# --- Editors / OS ---
+.vscode/
+.idea/
+.matplotlib-cache/
+*.swp
+*.swo
+.DS_Store
+Thumbs.db
