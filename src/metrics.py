@@ -84,3 +84,18 @@ def count_predictor_metrics(forecast: pd.Series, actual: pd.Series) -> dict:
         "binary_accuracy": binary["accuracy"],
         "n": int(len(aligned)),
     }
+
+
+def count_predictor_metrics_per_room(
+    forecast: pd.Series,
+    actual: pd.Series,
+    room_ids: pd.Series,
+) -> pd.DataFrame:
+    """Compute MAE/RMSE and binary-equivalent metrics per room."""
+    rows = []
+    for room in sorted(room_ids.dropna().unique()):
+        mask = room_ids == room
+        if mask.sum() > 0:
+            metrics = count_predictor_metrics(forecast[mask], actual[mask])
+            rows.append({"room_id": int(room), **metrics})
+    return pd.DataFrame(rows)
