@@ -9,7 +9,8 @@ digital twin; the current focus is a minimal, runnable simulation prototype.
 
 Demonstrate that predictive HVAC control — driven by an occupancy forecast — reduces
 energy use and improves thermal comfort compared to a reactive baseline. The prototype
-runs entirely on synthetic data and reports clear comparison metrics.
+runs on real building occupancy data (ROBOD) and a synthetic fallback, reporting clear
+comparison metrics.
 
 ## How to Run
 
@@ -21,20 +22,34 @@ source .venv/bin/activate
 # 2. Install dependencies
 pip install -r requirements.txt
 
-# 3. Run the end-to-end demo
-python scripts/run_demo.py
+# 3. Run on ROBOD real building data (Room 2, recommended)
+python scripts/run_demo.py --data robod --room 2
+
+# 4. (Optional) Run on synthetic data
+python scripts/run_demo.py --data synthetic
+
+# 5. (Optional) Skip training, reuse saved checkpoint
+python scripts/run_demo.py --data robod --room 2 --load-model
 ```
 
-The demo generates synthetic occupancy/temperature data, runs both reactive and
-predictive controllers, and writes comparison metrics + plots to `results/`.
+Results land in `results/`:
+- `metrics.csv` — reactive vs predictive HVAC comparison
+- `predictor_metrics.csv` — model MAE/RMSE on test set
+- `comparison.png` — time-series visualization
+- `predictor_forecasts.csv` — full prediction trace
 
 ## Tech Stack
 
 - **Language:** Python 3.10+
 - **Core libs:** NumPy, pandas, scikit-learn, matplotlib
-- **Simulation (future):** NVIDIA Isaac Sim for the building digital twin
-- **Structure:** `src/` for library code, `scripts/` for entry points, `data/` for
-  inputs, `results/` for outputs
+- **Deep learning:** PyTorch (LSTM occupancy forecasting)
+- **Real data:** ROBOD (Tekler et al. 2022, *Building Simulation*) —
+  NUS SDE4 net-zero energy building, 5 rooms, 5-min resolution,
+  ground-truth occupancy via surveillance cameras
+- **Digital twin (Phase 2):** NVIDIA Isaac Sim on DGX Spark with
+  NavMesh agent simulation
+- **Structure:** `src/` for library code, `scripts/` for entry points,
+  `data/` for inputs, `results/` for outputs, `models/` for checkpoints
 
 ## Repository Layout
 
