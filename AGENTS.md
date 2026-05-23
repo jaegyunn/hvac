@@ -1,92 +1,125 @@
 # AGENTS.md — Instructions for Codex
 
-This document tells Codex how to build out the Smart Building HVAC prototype.
+This document tells Codex how to extend the Smart Building HVAC prototype.
+Read this fully before any code change.
 
-## Scope (Phase 1)
+## Current State
 
-Build a **minimal runnable prototype**. No Isaac Sim yet. No real sensor data yet.
-Everything runs on synthetic data and produces a clear before/after comparison
-between reactive and predictive HVAC control.
+The prototype is well past Phase 1 minimum. Currently implemented:
 
-## What to Implement
+### Data
+- `src/data_loader.py`:
+  - `load_synthetic(days, freq_minutes)` — rule-based synthetic generator
+    (fallback / baseline)
+  - `load_robod(room, start_hour, end_hour, exclude_break)` — ROBOD adapter
+    (Tekler et al. 2022, NUS SDE4 building, 5 rooms, 5-min resolution)
+- Filters: daytime 06:00–22:00, exclude public holiday (2021-11-04) and
+  semester break (2021-12-05 to 2021-12-23)
 
-Four small modules under `src/`, plus one entry-point script:
+### Models
+- `SameTimeYesterdayPredictor` (baseline) in `src/occupancy_predictor.py`
+- `LSTMOccupancyPredictor` (PyTorch, lag-free for true future prediction)
+  - Features: hour_sin/cos, dayofweek one-hot, outdoor_temperature
+    (no occupancy lag — forces schedule learning)
+  - Target: occupancy_count at t+horizon (regression)
+  - 80/20 time-based train/test split
+  - Save/load via `.save()` / `.load()` to `models/lstm_<scenario>.pt`
 
-1. **`src/data_loader.py`**
-   - Generate synthetic time-series data: occupancy (0/1 or count), outdoor
-     temperature, indoor temperature.
-   - Provide a `load_synthetic(days: int, freq_minutes: int) -> pd.DataFrame`
-     function.
-   - Save/load CSVs under `data/`.
+### Controllers
+- `ReactiveController` — acts only when currently occupied + outside comfort band
+- `PredictiveController` — bidirectional pre-conditioning with deadband:
+  - `precondition_target=23.0`
+  - `precondition_count_threshold` (sensitivity to LSTM forecast)
+  - `precondition_deadband` (avoids oscillation around target)
+  - Heats or cools toward target when LSTM predicts upcoming occupancy
 
-2. **`src/occupancy_predictor.py`**
-   - Train a simple model (e.g. logistic regression or a small MLP) to predict
-     occupancy `k` steps ahead from recent history + time-of-day features.
-   - Expose `train(df)` and `predict(df, horizon)`.
-   - Start simple — even a "same time yesterday" baseline is fine for v1.
+### Config (`src/config.py`)
+- `freq_minutes=5` (matches ROBOD)
+- `predictor_horizon_minutes=120` (= 24 steps)
+- Summer scenario: outdoor 24~34 °C, indoor initial 28 °C
+- Comfort band 20~24 °C
+- `thermal_a=1.0`, `thermal_b=0.04` (steady-state covers comfort band)
+- Random seed 42
 
-3. **`src/hvac_controller.py`**
-   - Two controllers with the same interface:
-     - `ReactiveController` — turns HVAC on only when current occupancy is detected
-       and indoor temperature is out of comfort range.
-     - `PredictiveController` — uses the occupancy forecast to pre-condition the
-       room before predicted occupancy.
-   - Each step returns an HVAC action (heat / cool / off) and the resulting
-     indoor temperature (use a tiny thermal model: `T_next = T + a*action - b*(T - T_outdoor)`).
+### Entry point
+- `python scripts/run_demo.py --data robod --room 2` (default)
+- `python scripts/run_demo.py --data synthetic` (fallback)
+- Add `--load-model` to skip training and reuse checkpoint
 
-4. **`src/metrics.py`**
-   - Compute: total energy used (sum of |action|), comfort violations (minutes
-     outside comfort band while occupied), and a combined score.
-   - Provide `compare(reactive_log, predictive_log)` returning a dict / DataFrame.
+## Roadmap
 
-5. **`scripts/run_demo.py`**
-   - Single demo command. End-to-end:
-     1. load/generate synthetic data
-     2. train the predictor
-     3. run both controllers over the same scenario
-     4. compute metrics
-     5. print a summary table and save plots/CSVs to `results/`
-   - Must be runnable as: `python scripts/run_demo.py`
+### Step 2: Multi-room LSTM
+- Extend `load_robod` to accept `rooms: list[int]` and concatenate with
+  `room_id` column
+- Add `room_id` one-hot to LSTM features
+- Train on ROBOD rooms 1–5 jointly
+- Per-room evaluation in metrics
+
+### Step 3: Evaluation matrix + Sim2Real
+- Compare models: baseline (Same-Time-Yesterday), MLP (sklearn),
+  LSTM, optionally RF/GBM
+- Scenarios: within-room (R2), within-all-rooms, cross-room
+  (train on R1+3+4+5, test on R2)
+- Sim2Real: compare our predictive simulation against ROBOD's actual
+  HVAC operation
+  (energy from `chilled_water_energy + fcu_fan_energy` columns)
+
+### Step 4: Isaac Sim closed-loop digital twin
+- Building USD on DGX Spark (uses pre-existing room samples; no custom
+  modeling)
+- NavMesh-based agent simulation generates synthetic occupancy
+- Our LSTM + PredictiveController run **inside Isaac Sim's Python runtime**
+  (closed loop, not playback)
+- Room visualization: color by thermal state, agent visibility by
+  occupancy
+- Pre-recorded video for the demo; live demo as fallback only
 
 ## Constraints
 
-- **Simple Python.** Standard library + NumPy + pandas + scikit-learn + matplotlib.
-  No PyTorch, no TensorFlow, no Isaac Sim in Phase 1.
-- **No network calls** at runtime.
-- **Deterministic** by default — seed all randomness.
-- Code should run on a laptop in under a minute.
-- Keep modules small and importable; favor pure functions over heavy classes.
+- **Stack**: stdlib + NumPy + pandas + scikit-learn + matplotlib + PyTorch.
+  No TensorFlow.
+- **Deterministic**: seed all randomness (`random_seed=42` in CONFIG).
+- **Mac-friendly**: training runs on Mac (CPU or MPS). DGX Spark is for
+  Isaac Sim only.
+- **No network calls** at simulation/training time. ROBOD data ships in
+  `data/raw/ROBOD/SupplementaryData/`.
+- Keep modules small; prefer pure functions over heavy classes.
+- Do not silently change defaults in `src/config.py`; if a parameter must
+  change, document it in `results/notes.txt` and in the commit message.
 
-## Default Parameters
+## Git Workflow (MANDATORY)
 
-Use these values across all modules. Centralize them (e.g. a `CONFIG` dict at the
-top of `run_demo.py` or a small `src/config.py`) so they're easy to tweak later.
+Commit after every meaningful change. Steps:
 
-| Parameter | Value | Notes |
-|---|---|---|
-| Simulation length | **14 days** | Enough to show weekday/weekend patterns, still fast |
-| Sampling period | **10 minutes** | HVAC step = one sample |
-| Comfort band | **20–24 °C** | Indoor temp outside this counts as a violation *when occupied* |
-| Outdoor temp range | sinusoidal, **−2 °C to +12 °C** (winter-ish) | + small Gaussian noise |
-| Occupancy schedule | weekdays **09:00–18:00**, occupied = 1 | + small noise / occasional gaps |
-| Predictor horizon | **30 minutes** (= 3 steps ahead) | What `PredictiveController` looks at |
-| HVAC actions | **{−1: cool, 0: off, +1: heat}** | Discrete, unit magnitude |
-| Thermal model | `T_next = T + a·action − b·(T − T_outdoor)` | `a = 0.5`, `b = 0.1` as starting values |
-| Initial indoor temp | **22 °C** | Mid-comfort |
-| Random seed | **42** | Single global seed |
+1. Make the code change.
+2. Run `python scripts/run_demo.py --data robod --room 2` and confirm it
+   runs end-to-end without error.
+3. Stage relevant files: `git add <files>` (avoid `git add -A` to keep
+   ignored folders out).
+4. Commit with a message in the format:
+   `<scope>: <short summary under 60 chars>`
 
-These are starting values. If predictive ends up looking identical to reactive,
-the first knob to turn is `a` / `b` (controller authority vs. thermal leakage) or
-the predictor horizon. Don't tune them silently — note any changes in `results/`.
+   Examples:
+   - `predictor: remove lag features for true future prediction`
+   - `controller: add deadband to prevent oscillation`
+   - `data_loader: add ROBOD adapter with holiday filters`
+   - `metrics: add per-room MAE breakdown`
 
-## Definition of Done (Phase 1)
+5. If multiple unrelated changes, split into separate commits.
 
-- `python scripts/run_demo.py` runs end-to-end without errors on a fresh checkout.
-- `results/` contains a metrics CSV and at least one comparison plot.
-- The printed summary clearly shows reactive vs predictive numbers.
+Never:
+- Commit broken code (always verify with demo first)
+- Use `--no-verify` or skip hooks
+- Bundle unrelated changes
+- Commit `data/raw/`, `models/*.pt`, `results/*` (already in `.gitignore`)
+- Force-push to `main`
 
-## Phase 2 (later, do not start yet)
+## Definition of Done (per Step)
 
-- Replace synthetic data with logged building data.
-- Swap the thermal model for the Isaac Sim digital twin.
-- Add a more capable occupancy model (sequence model / gradient boosting).
+A step is done when:
+- All listed changes are implemented
+- `python scripts/run_demo.py --data robod --room 2` runs cleanly
+- New metrics make sense (reactive ≠ predictive, predictive comfort
+  improvement is visible)
+- Changes are committed with clear messages (one logical change per commit)
+- Behavior changes documented in `results/notes.txt`
