@@ -23,6 +23,16 @@ class BaseController:
     def choose_action(self, occupancy: int, outdoor_temperature: float, predicted_count: float = 0.0) -> int:
         raise NotImplementedError
 
+    def _comfort_action(self, outdoor_temperature: float) -> int:
+        """Mode-aware action when current occupancy needs comfort."""
+        if outdoor_temperature > self.mode_changeover:
+            if self.indoor_temperature > self.comfort_max:
+                return -1
+            return 0
+        if self.indoor_temperature < self.comfort_min:
+            return 1
+        return 0
+
     def step(self, row: pd.Series, predicted_count: float = 0.0) -> dict:
         indoor_before = float(self.indoor_temperature)
         outdoor = float(row["outdoor_temperature"])
@@ -52,13 +62,7 @@ class ReactiveController(BaseController):
     def choose_action(self, occupancy: int, outdoor_temperature: float, predicted_count: float = 0.0) -> int:
         if not occupancy:
             return 0
-        if outdoor_temperature > self.mode_changeover:
-            if self.indoor_temperature > self.comfort_max:
-                return -1
-            return 0
-        if self.indoor_temperature < self.comfort_min:
-            return 1
-        return 0
+        return self._comfort_action(outdoor_temperature)
 
 
 @dataclass
@@ -74,15 +78,6 @@ class PredictiveController(BaseController):
 
         if predicted_count > self.precondition_count_threshold:
             return self._precondition_action(outdoor_temperature)
-        return 0
-
-    def _comfort_action(self, outdoor_temperature: float) -> int:
-        if outdoor_temperature > self.mode_changeover:
-            if self.indoor_temperature > self.comfort_max:
-                return -1
-            return 0
-        if self.indoor_temperature < self.comfort_min:
-            return 1
         return 0
 
     def _precondition_action(self, outdoor_temperature: float) -> int:
