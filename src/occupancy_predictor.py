@@ -116,6 +116,7 @@ class LSTMOccupancyPredictor:
         self.train_losses: list[float] = []
         self.val_losses: list[float] = []
         self.train_end_timestamp: pd.Timestamp | None = None
+        self.train_end_per_room: dict[int, pd.Timestamp] = {}
 
     def train(self, df: pd.DataFrame, horizon: int) -> "LSTMOccupancyPredictor":
         _seed_everything(self.random_seed)
@@ -123,12 +124,32 @@ class LSTMOccupancyPredictor:
         features = _count_features(df)
         target = df["occupancy_count"].shift(-horizon).to_numpy(dtype=np.float32)
         room_ids = df["room_id"].to_numpy() if "room_id" in df.columns else None
+        if room_ids is not None:
+            target_room_ids = pd.Series(room_ids).shift(-horizon).to_numpy()
+            target[target_room_ids != room_ids] = np.nan
         timestamps = pd.to_datetime(df["timestamp"])
-        sorted_ts = timestamps.sort_values().reset_index(drop=True)
-        split_idx = int(len(sorted_ts) * self.train_ratio)
-        train_end = sorted_ts.iloc[split_idx]
-        self.train_end_timestamp = train_end
-        train_mask = timestamps < train_end
+        if "room_id" in df.columns:
+            train_mask = pd.Series(False, index=df.index)
+            self.train_end_per_room = {}
+            for room in df["room_id"].unique():
+                room_mask = df["room_id"] == room
+                room_ts = timestamps.loc[room_mask].sort_values()
+                split_idx = int(len(room_ts) * self.train_ratio)
+                if split_idx >= len(room_ts):
+                    split_idx = len(room_ts) - 1
+                train_end_for_room = room_ts.iloc[split_idx]
+                self.train_end_per_room[int(room)] = train_end_for_room
+                train_mask |= room_mask & (timestamps < train_end_for_room)
+            self.train_end_timestamp = None
+        else:
+            sorted_ts = timestamps.sort_values().reset_index(drop=True)
+            split_idx = int(len(sorted_ts) * self.train_ratio)
+            if split_idx >= len(sorted_ts):
+                split_idx = len(sorted_ts) - 1
+            train_end = sorted_ts.iloc[split_idx]
+            self.train_end_timestamp = train_end
+            self.train_end_per_room = {}
+            train_mask = timestamps < train_end
 
         train_indices = _sequence_end_indices(features, target, train_mask.to_numpy(), self.sequence_length, room_ids)
         val_indices = _sequence_end_indices(features, target, ~train_mask.to_numpy(), self.sequence_length, room_ids)
@@ -201,6 +222,8 @@ class LSTMOccupancyPredictor:
             room_ids,
         )
         indices = indices[indices < len(df) - horizon]
+        if room_ids is not None:
+            indices = indices[room_ids[indices + horizon] == room_ids[indices]]
         sequences, _ = _make_sequences(features, target, indices, self.sequence_length)
         predictions = np.full(len(df), np.nan, dtype=np.float32)
 
@@ -242,6 +265,7 @@ class LSTMOccupancyPredictor:
                     "freq_minutes": self.freq_minutes,
                     "train_ratio": self.train_ratio,
                     "train_end_timestamp": self.train_end_timestamp,
+                    "train_end_per_room": self.train_end_per_room,
                     "input_size": self.feature_mean.shape[0],
                 },
                 "train_losses": self.train_losses,
@@ -263,6 +287,7 @@ class LSTMOccupancyPredictor:
         )
         predictor.freq_minutes = config["freq_minutes"]
         predictor.train_end_timestamp = config.get("train_end_timestamp")
+        predictor.train_end_per_room = config.get("train_end_per_room", {})
         predictor.feature_mean = checkpoint["feature_mean"]
         predictor.feature_std = checkpoint["feature_std"]
         predictor.target_mean = checkpoint["target_mean"]
