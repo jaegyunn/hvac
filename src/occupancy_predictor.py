@@ -122,6 +122,7 @@ class LSTMOccupancyPredictor:
         self.freq_minutes = _infer_freq_minutes(df)
         features = _count_features(df)
         target = df["occupancy_count"].shift(-horizon).to_numpy(dtype=np.float32)
+        room_ids = df["room_id"].to_numpy() if "room_id" in df.columns else None
         timestamps = pd.to_datetime(df["timestamp"])
         sorted_ts = timestamps.sort_values().reset_index(drop=True)
         split_idx = int(len(sorted_ts) * self.train_ratio)
@@ -129,8 +130,8 @@ class LSTMOccupancyPredictor:
         self.train_end_timestamp = train_end
         train_mask = timestamps < train_end
 
-        train_indices = _sequence_end_indices(features, target, train_mask.to_numpy(), self.sequence_length)
-        val_indices = _sequence_end_indices(features, target, ~train_mask.to_numpy(), self.sequence_length)
+        train_indices = _sequence_end_indices(features, target, train_mask.to_numpy(), self.sequence_length, room_ids)
+        val_indices = _sequence_end_indices(features, target, ~train_mask.to_numpy(), self.sequence_length, room_ids)
         x_train_raw, y_train_raw = _make_sequences(features, target, train_indices, self.sequence_length)
         x_val_raw, y_val_raw = _make_sequences(features, target, val_indices, self.sequence_length)
 
@@ -191,7 +192,15 @@ class LSTMOccupancyPredictor:
 
         features = _count_features(df)
         target = np.zeros(len(df), dtype=np.float32)
-        indices = np.arange(self.sequence_length - 1, len(df) - horizon)
+        room_ids = df["room_id"].to_numpy() if "room_id" in df.columns else None
+        indices = _sequence_end_indices(
+            features,
+            target,
+            np.ones(len(df), dtype=bool),
+            self.sequence_length,
+            room_ids,
+        )
+        indices = indices[indices < len(df) - horizon]
         sequences, _ = _make_sequences(features, target, indices, self.sequence_length)
         predictions = np.full(len(df), np.nan, dtype=np.float32)
 
@@ -313,10 +322,16 @@ def _count_features(df: pd.DataFrame) -> np.ndarray:
 
     day_onehot = pd.get_dummies(prepared["timestamp"].dt.dayofweek, prefix="dow")
     day_onehot = day_onehot.reindex(columns=[f"dow_{idx}" for idx in range(7)], fill_value=0)
+    if "room_id" in prepared.columns:
+        room_onehot = pd.get_dummies(prepared["room_id"], prefix="room")
+    else:
+        room_onehot = pd.DataFrame(index=prepared.index)
+    room_onehot = room_onehot.reindex(columns=[f"room_{room}" for room in range(1, 6)], fill_value=0)
     features = pd.concat(
         [
             prepared[["hour_sin", "hour_cos"]],
             day_onehot,
+            room_onehot,
             prepared[["outdoor_temperature"]],
         ],
         axis=1,
@@ -329,14 +344,19 @@ def _sequence_end_indices(
     target: np.ndarray,
     mask: np.ndarray,
     sequence_length: int,
+    room_ids: np.ndarray | None = None,
 ) -> np.ndarray:
     indices = []
     for idx in range(sequence_length - 1, len(features)):
         start = idx - sequence_length + 1
         if not np.isfinite(target[idx]):
             continue
-        if mask[start : idx + 1].all():
-            indices.append(idx)
+        if not mask[start : idx + 1].all():
+            continue
+        if room_ids is not None:
+            if not (room_ids[start : idx + 1] == room_ids[idx]).all():
+                continue
+        indices.append(idx)
     return np.array(indices, dtype=int)
 
 
