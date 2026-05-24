@@ -2,7 +2,13 @@
 
 from __future__ import annotations
 
+import sys
 import time
+from pathlib import Path
+
+ROOT = Path(__file__).resolve().parents[1]
+if str(ROOT) not in sys.path:
+    sys.path.insert(0, str(ROOT))
 
 import altair as alt
 import pandas as pd
@@ -19,17 +25,15 @@ def main() -> None:
     st.set_page_config(page_title="Smart Building HVAC", layout="wide")
     st.title("Smart Building HVAC Network Tier")
 
-    placeholder = st.empty()
-    while True:
-        state = _get_json("/api/state", {"rooms": {}})
-        health = _get_json("/api/health", {})
+    state = _get_json("/api/state", {"rooms": {}})
+    health = _get_json("/api/health", {})
 
-        with placeholder.container():
-            _render_overview(state)
-            _render_detail(state)
-            _render_health(health, state)
+    _render_overview(state)
+    _render_detail(state)
+    _render_health(health, state)
 
-        time.sleep(2)
+    time.sleep(2)
+    st.rerun()
 
 
 def _render_overview(state: dict) -> None:
@@ -50,11 +54,11 @@ def _render_overview(state: dict) -> None:
         with col:
             st.markdown(
                 f"""
-                <div style="border-left: 6px solid {color}; padding: 0.5rem 0.75rem; background: #f7f7f7;">
-                  <h3 style="margin: 0;">Room {room_id}</h3>
-                  <p>Occupancy: <b>{room_state.get("occupancy", "-")}</b></p>
-                  <p>Indoor: <b>{_fmt(indoor)} °C</b></p>
-                  <p>Predicted in 2h: <b>{_fmt(room_state.get("predicted_count"))}</b></p>
+                <div style="border-left: 6px solid {color}; padding: 0.5rem 0.75rem; background: #f7f7f7; color: #1a1a1a;">
+                  <h3 style="margin: 0; color: #1a1a1a;">Room {room_id}</h3>
+                  <p style="color: #1a1a1a;">Occupancy: <b>{room_state.get("occupancy", "-")}</b></p>
+                  <p style="color: #1a1a1a;">Indoor: <b>{_fmt(indoor)} °C</b></p>
+                  <p style="color: #1a1a1a;">Predicted in 2h: <b>{_fmt(room_state.get("predicted_count"))}</b></p>
                 </div>
                 """,
                 unsafe_allow_html=True,
@@ -67,7 +71,7 @@ def _render_detail(state: dict) -> None:
     if not rooms:
         return
 
-    selected = st.selectbox("Room", rooms, index=0)
+    selected = st.selectbox("Room", rooms, index=0, key="room_selector")
     history = _get_json(f"/api/history?room_id={selected}&hours=24", {"history": []})
     df = pd.DataFrame(history.get("history", []))
     if df.empty:
@@ -98,7 +102,11 @@ def _render_detail(state: dict) -> None:
     temp_chart = (
         alt.Chart(temp_df)
         .mark_line()
-        .encode(x="timestamp:T", y="temperature_c:Q", color="series:N")
+        .encode(
+            x="timestamp:T",
+            y=alt.Y("temperature_c:Q", scale=alt.Scale(zero=False)),
+            color="series:N",
+        )
         .properties(height=240)
     )
     st.altair_chart(temp_chart, use_container_width=True)
