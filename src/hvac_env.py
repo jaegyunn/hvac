@@ -22,7 +22,7 @@ class HVACRoomEnv(gym.Env):
 
     metadata = {"render_modes": []}
 
-    def __init__(self, df, forecast, episode_length=288):
+    def __init__(self, df, forecast, episode_length=288, train_ratio: float = 0.8):
         """
         Args:
           df: pandas DataFrame for a single room with columns:
@@ -30,18 +30,20 @@ class HVACRoomEnv(gym.Env):
           forecast: pd.Series of LSTM count forecast aligned with df index
                     (NaN where forecast unavailable, e.g., early rows)
           episode_length: max steps per episode (default 288 = 24h at 5-min)
+          train_ratio: front fraction of df that reset() may sample from
         """
         super().__init__()
         self.df = df.reset_index(drop=True)
         self.forecast = forecast.reset_index(drop=True)
         self.episode_length = episode_length
+        self.train_max_start = max(1, int(train_ratio * len(self.df)) - episode_length)
 
         self.observation_space = spaces.Box(
-            low=np.array([10.0, 10.0, 0.0, 0.0, 0.0], dtype=np.float32),
-            high=np.array([40.0, 40.0, 50.0, 50.0, 24.0], dtype=np.float32),
+            low=np.array([10.0, 10.0, 0.0, 0.0, -1.0, -1.0], dtype=np.float32),
+            high=np.array([40.0, 40.0, 50.0, 50.0, 1.0, 1.0], dtype=np.float32),
         )
         self.action_space = spaces.Discrete(3)
-        self._action_map = {0: -1, 1: 0, 2: 1}
+        self._action_map = {0: -1, 1: 0, 2: 1}  # 0=cool, 1=off, 2=heat
 
         self.indoor_temp = CONFIG["initial_indoor_temp_c"]
         self.start_idx = 0
@@ -49,8 +51,7 @@ class HVACRoomEnv(gym.Env):
 
     def reset(self, seed=None, options=None):
         super().reset(seed=seed)
-        max_start = max(1, len(self.df) - self.episode_length)
-        self.start_idx = int(self.np_random.integers(0, max_start))
+        self.start_idx = int(self.np_random.integers(0, self.train_max_start))
         self.current_step = 0
         self.indoor_temp = CONFIG["initial_indoor_temp_c"]
         return self._get_obs(), {}
@@ -66,12 +67,17 @@ class HVACRoomEnv(gym.Env):
         b = CONFIG["thermal_b"]
         self.indoor_temp += a * env_action - b * (self.indoor_temp - outdoor)
 
-        energy_penalty = -abs(env_action)
-        comfort_violation = occupancy and (
+        # Match src.metrics.summarize: combined_score = energy_weight * energy + comfort_weight * violation_minutes.
+        energy_cost = abs(env_action)
+        out_of_band = (
             self.indoor_temp < CONFIG["comfort_min_c"]
             or self.indoor_temp > CONFIG["comfort_max_c"]
         )
-        reward = energy_penalty - 0.5 * float(comfort_violation)
+        violation_minutes = CONFIG["freq_minutes"] * int(bool(occupancy) and out_of_band)
+        reward = (
+            -CONFIG["energy_weight"] * energy_cost
+            - CONFIG["comfort_weight"] * violation_minutes
+        )
 
         self.current_step += 1
         terminated = False
@@ -88,6 +94,8 @@ class HVACRoomEnv(gym.Env):
         row = self.df.iloc[row_idx]
         ts = pd.to_datetime(row["timestamp"])
         hour = ts.hour + ts.minute / 60.0
+        hour_sin = np.sin(2 * np.pi * hour / 24)
+        hour_cos = np.cos(2 * np.pi * hour / 24)
         predicted = self.forecast.iloc[row_idx] if row_idx < len(self.forecast) else 0.0
         if pd.isna(predicted):
             predicted = 0.0
@@ -97,7 +105,8 @@ class HVACRoomEnv(gym.Env):
                 float(row["outdoor_temperature"]),
                 float(row["occupancy_count"]),
                 float(predicted),
-                float(hour),
+                float(hour_sin),
+                float(hour_cos),
             ],
             dtype=np.float32,
         )
@@ -111,8 +120,8 @@ if __name__ == "__main__":
     from src.data_loader import load_robod
     from src.occupancy_predictor import LSTMOccupancyPredictor
 
-    print("Loading ROBOD Room 4...")
-    df = load_robod(rooms=[4])
+    print("Loading ROBOD Room 2...")
+    df = load_robod(rooms=[2])
 
     print("Loading LSTM forecast...")
     model_path = ROOT / "models" / "lstm_robod_multiroom.pt"
@@ -137,4 +146,5 @@ if __name__ == "__main__":
 
     print(f"\nMean random reward: {np.mean(rewards):.1f}")
     print(f"Std: {np.std(rewards):.1f}")
+    print("(reward sum * -1 should approximate combined_score)")
     print("(For comparison, trained PPO should be significantly higher)")
