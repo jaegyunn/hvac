@@ -18,7 +18,7 @@ if str(ROOT) not in sys.path:
 from src.config import horizon_steps
 from src.data_loader import load_robod
 from src.hvac_controller import PredictiveController, ReactiveController, run_controller
-from src.metrics import compare, summarize
+from src.metrics import summarize
 from src.occupancy_predictor import LSTMOccupancyPredictor
 from src.rl_controller import RLController
 
@@ -36,23 +36,22 @@ def main() -> None:
     test_df = df.loc[test_mask].reset_index(drop=True)
     test_forecast = forecast.loc[test_mask].reset_index(drop=True)
 
+    reactive_log = run_controller(ReactiveController(), test_df)
+    predictive_log = run_controller(PredictiveController(), test_df, test_forecast)
     controller = RLController(model_path=args.model, df_provider=test_df)
     rl_log = run_controller(controller, test_df, test_forecast)
+
+    reactive_log.to_csv(results_dir / "reactive_log.csv", index=False)
+    predictive_log.to_csv(results_dir / "predictive_log.csv", index=False)
     rl_log.to_csv(results_dir / "rl_log.csv", index=False)
 
+    reactive_row = summarize(reactive_log)
+    predictive_row = summarize(predictive_log)
     rl_row = summarize(rl_log)
     rl_row["controller"] = "rl_ppo"
 
     metrics_path = results_dir / "metrics.csv"
-    if metrics_path.exists():
-        metrics = pd.read_csv(metrics_path)
-    else:
-        reactive_log = run_controller(ReactiveController(), test_df)
-        predictive_log = run_controller(PredictiveController(), test_df, test_forecast)
-        metrics = compare(reactive_log, predictive_log)
-
-    metrics = metrics[metrics["controller"] != "rl_ppo"]
-    metrics = pd.concat([metrics, pd.DataFrame([rl_row])], ignore_index=True)
+    metrics = pd.DataFrame([reactive_row, predictive_row, rl_row])
     metrics.to_csv(metrics_path, index=False)
 
     print(pd.DataFrame([rl_row]).to_string(index=False))
