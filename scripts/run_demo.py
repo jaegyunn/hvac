@@ -30,17 +30,18 @@ from src.metrics import compare, count_predictor_metrics, count_predictor_metric
 from src.occupancy_predictor import LSTMOccupancyPredictor, train, train_lstm
 
 
-RESULTS_DIR = ROOT / "results"
+RESULTS_BASE_DIR = ROOT / "results"
 MODELS_DIR = ROOT / "models"
 
 
 def main() -> None:
     started = time.perf_counter()
     args = _parse_args()
-    RESULTS_DIR.mkdir(parents=True, exist_ok=True)
     MODELS_DIR.mkdir(parents=True, exist_ok=True)
 
     scenario, df, rooms = _load_data(args)
+    results_dir = RESULTS_BASE_DIR / scenario
+    results_dir.mkdir(parents=True, exist_ok=True)
     horizon = horizon_steps()
     train_mask, test_mask, split_label = _time_split(df)
     timestamps = pd.to_datetime(df["timestamp"])
@@ -99,24 +100,24 @@ def main() -> None:
     else:
         per_room_metrics_df = pd.DataFrame()
 
-    reactive_log.to_csv(RESULTS_DIR / "reactive_log.csv", index=False)
-    predictive_log.to_csv(RESULTS_DIR / "predictive_log.csv", index=False)
-    metrics.to_csv(RESULTS_DIR / "metrics.csv", index=False)
-    predictor_metrics_df.to_csv(RESULTS_DIR / "predictor_metrics.csv", index=False)
-    per_room_metrics_df.to_csv(RESULTS_DIR / "predictor_metrics_per_room.csv", index=False)
+    reactive_log.to_csv(results_dir / "reactive_log.csv", index=False)
+    predictive_log.to_csv(results_dir / "predictive_log.csv", index=False)
+    metrics.to_csv(results_dir / "metrics.csv", index=False)
+    predictor_metrics_df.to_csv(results_dir / "predictor_metrics.csv", index=False)
+    per_room_metrics_df.to_csv(results_dir / "predictor_metrics_per_room.csv", index=False)
     forecast_output = pd.DataFrame({"timestamp": df["timestamp"]})
     if "room_id" in df.columns:
         forecast_output["room_id"] = df["room_id"]
     forecast_output["actual_count_at_horizon"] = forecast_actual
     forecast_output["same_time_yesterday_count"] = baseline_count_forecast
     forecast_output["lstm_count"] = lstm_count_forecast
-    forecast_output.to_csv(RESULTS_DIR / "predictor_forecasts.csv", index=False)
-    (RESULTS_DIR / "config.json").write_text(json.dumps(CONFIG, indent=2) + "\n")
-    (RESULTS_DIR / "notes.txt").write_text(
+    forecast_output.to_csv(results_dir / "predictor_forecasts.csv", index=False)
+    (results_dir / "config.json").write_text(json.dumps(CONFIG, indent=2) + "\n")
+    (results_dir / "notes.txt").write_text(
         "PredictiveController uses the LSTM count forecast and preconditions using its configured threshold.\n"
         "LSTM trains on the first 80% of timestamps and validates/tests on the final 20% for this v1 demo.\n"
     )
-    _plot_comparison(sim_df, reactive_log, predictive_log, RESULTS_DIR / "comparison.png")
+    _plot_comparison(sim_df, reactive_log, predictive_log, results_dir / "comparison.png")
 
     print("\nSmart Building HVAC Phase 1 Demo")
     print("--------------------------------")
@@ -134,7 +135,7 @@ def main() -> None:
         print("-------------------------------")
         print(per_room_metrics_df.to_string(index=False))
     print("\nLower combined_score is better; it weights energy plus occupied comfort violation minutes.")
-    print(f"\nWrote results to: {RESULTS_DIR}")
+    print(f"\nWrote results to: {results_dir}")
     print(f"Total time: {time.perf_counter() - started:.2f}s")
 
 
