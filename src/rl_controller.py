@@ -32,6 +32,7 @@ class RLController(BaseController):
         if not self.model_path.exists():
             raise FileNotFoundError(f"PPO model not found: {self.model_path}")
         self._model = PPO.load(self.model_path)
+        self.name = "rl_ppo"
         self.df_provider = df_provider.reset_index(drop=True) if df_provider is not None else None
         self._step_index = 0
         self._action_map = {0: -1, 1: 0, 2: 1}
@@ -66,7 +67,7 @@ class RLController(BaseController):
         )
         action_int, _ = self._model.predict(obs, deterministic=True)
         self._step_index += 1
-        return self._action_map[int(action_int)]
+        return self._action_map[int(np.asarray(action_int).item())]
 
     def _time_features(self, timestamp) -> tuple[float, float]:
         if timestamp is not None:
