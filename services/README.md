@@ -27,4 +27,6 @@ Defaults:
 - Room: `2`
 - Simulator speedup: `300x`
 
+Troubleshooting: If schema changes, delete `data/runtime.db` before restarting backend.
+
 Out of scope here: auth, controllers, Kafka, Kubernetes, PostgreSQL, WebSockets.

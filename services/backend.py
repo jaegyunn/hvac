@@ -162,7 +162,7 @@ def _write_sensor(record: dict) -> None:
     with sqlite3.connect(config.DB_PATH) as conn:
         conn.execute(
             """
-            INSERT INTO sensor_log(timestamp, room_id, occupancy_count, indoor_c, outdoor_c)
+            INSERT OR REPLACE INTO sensor_log(timestamp, room_id, occupancy_count, indoor_c, outdoor_c)
             VALUES (?, ?, ?, ?, ?)
             """,
             (
@@ -179,7 +179,7 @@ def _write_prediction(timestamp: str, room_id: int, predicted_count: float) -> N
     with sqlite3.connect(config.DB_PATH) as conn:
         conn.execute(
             """
-            INSERT INTO prediction_log(timestamp, room_id, horizon_minutes, predicted_count)
+            INSERT OR REPLACE INTO prediction_log(timestamp, room_id, horizon_minutes, predicted_count)
             VALUES (?, ?, ?, ?)
             """,
             (timestamp, room_id, config.PREDICTOR_HORIZON_MINUTES, predicted_count),
