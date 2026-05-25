@@ -1,0 +1,4 @@
+controller,energy_used,comfort_violation_minutes,combined_score
+reactive,205.0,1005,707.5
+predictive,205.0,1005,707.5
+rl_ppo,0.0,2100,1050.0
