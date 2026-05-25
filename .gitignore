@@ -84,3 +84,14 @@ Thumbs.db
 # --- AI agent instructions (local only) ---
 AGENTS.md
 CLAUDE.md
+
+# --- Tracked artifacts (allow specific files despite earlier excludes) ---
+# ROBOD dataset (small enough to commit, ~14MB total)
+!data/
+!data/raw/
+!data/raw/ROBOD/
+!data/raw/ROBOD/**
+# Trained model checkpoints used by the demo (each <300KB)
+!models/lstm_robod_room2.pt
+!models/lstm_robod_multiroom.pt
+!models/ppo_room2.zip
