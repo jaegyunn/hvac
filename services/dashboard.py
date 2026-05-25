@@ -78,13 +78,19 @@ def _render_detail(state: dict) -> None:
         st.info("No history yet for this room.")
         return
 
+    horizon_minutes = CONFIG["predictor_horizon_minutes"]
     df["timestamp"] = pd.to_datetime(df["timestamp"])
-    count_df = df.melt(
-        id_vars=["timestamp"],
-        value_vars=["occupancy_count", "predicted_count"],
-        var_name="series",
-        value_name="count",
+    actual_df = df[["timestamp", "occupancy_count"]].rename(
+        columns={"occupancy_count": "count"}
     )
+    actual_df["series"] = "actual"
+
+    pred_df = df[["timestamp", "predicted_count"]].copy()
+    pred_df["timestamp"] = pred_df["timestamp"] + pd.Timedelta(minutes=horizon_minutes)
+    pred_df = pred_df.rename(columns={"predicted_count": "count"})
+    pred_df["series"] = f"lstm_prediction (made {horizon_minutes}min earlier)"
+
+    count_df = pd.concat([actual_df, pred_df], ignore_index=True)
     count_chart = (
         alt.Chart(count_df)
         .mark_line()
@@ -92,6 +98,10 @@ def _render_detail(state: dict) -> None:
         .properties(height=240)
     )
     st.altair_chart(count_chart, use_container_width=True)
+    st.caption(
+        "Prediction curve is shifted forward by the horizon so each point aligns "
+        "with the actual time it was predicting."
+    )
 
     temp_df = df.melt(
         id_vars=["timestamp"],
