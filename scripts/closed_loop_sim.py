@@ -87,6 +87,7 @@ class ClosedLoopRunner:
             self.state.indoor_temperature
             + CONFIG["thermal_a"] * action
             - CONFIG["thermal_b"] * (self.state.indoor_temperature - outdoor_temp)
+            + CONFIG["thermal_c"] * occupancy_count
         )
         self.state.energy_used += abs(action)
         if is_occupied and (new_temp < CONFIG["comfort_min_c"] or new_temp > CONFIG["comfort_max_c"]):

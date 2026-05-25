@@ -16,6 +16,7 @@ class BaseController:
     mode_changeover: float = CONFIG["mode_changeover_c"]
     thermal_a: float = CONFIG["thermal_a"]
     thermal_b: float = CONFIG["thermal_b"]
+    thermal_c: float = CONFIG["thermal_c"]
     indoor_temperature: float = CONFIG["initial_indoor_temp_c"]
 
     name: str = "base"
@@ -43,7 +44,12 @@ class BaseController:
         occupancy = int(row["occupancy"])
         occupancy_count = int(row.get("occupancy_count", occupancy))
         action = self.choose_action(occupancy, outdoor, float(predicted_count))
-        self.indoor_temperature = indoor_before + self.thermal_a * action - self.thermal_b * (indoor_before - outdoor)
+        self.indoor_temperature = (
+            indoor_before
+            + self.thermal_a * action
+            - self.thermal_b * (indoor_before - outdoor)
+            + self.thermal_c * occupancy_count
+        )
 
         return {
             "timestamp": row["timestamp"],

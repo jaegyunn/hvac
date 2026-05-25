@@ -62,10 +62,16 @@ class HVACRoomEnv(gym.Env):
         row = self.df.iloc[row_idx]
         outdoor = float(row["outdoor_temperature"])
         occupancy = int(row["occupancy"])
+        occupancy_count = float(row["occupancy_count"])
 
         a = CONFIG["thermal_a"]
         b = CONFIG["thermal_b"]
-        self.indoor_temp += a * env_action - b * (self.indoor_temp - outdoor)
+        c = CONFIG["thermal_c"]
+        self.indoor_temp += (
+            a * env_action
+            - b * (self.indoor_temp - outdoor)
+            + c * occupancy_count
+        )
 
         # Match src.metrics.summarize: combined_score = energy_weight * energy + comfort_weight * violation_minutes.
         energy_cost = abs(env_action)
