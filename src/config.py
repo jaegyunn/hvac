@@ -11,6 +11,9 @@ CONFIG = {
     "predictor_horizon_minutes": 120,
     "thermal_a": 1.0,
     "thermal_b": 0.04,
+    "thermal_c": 0.05,  # Occupancy heat coefficient: degrees C per person per 5-min step.
+    # ASHRAE-derived (100W/person, ~174kJ/K small room -> 0.17C/person/step
+    # theoretical; reduced to 0.05 to account for ventilation and envelope losses).
     "initial_indoor_temp_c": 28.0,
     "random_seed": 42,
     "energy_weight": 1.0,
